@@ -66,7 +66,7 @@ This tool addresses all these challenges with a simple, efficient interface.
 
 ## Live Demo
 
-Try the calculator: [Your Netlify URL here]
+Try the calculator: (https://nurseassign.netlify.app/)
 
 ### Quick Test
 1. Enter rooms: `114-116, 118-127, 129-140, 142-153`
@@ -85,7 +85,7 @@ Simply visit the live demo link above - no installation required!
 1. Fork this repository
 2. Go to Settings → Pages
 3. Select "Deploy from branch" → main → / (root)
-4. Your site will be available at `https://[username].github.io/nurse-assignment-calculator`
+4. Your site will be available at `https://ecollel90.github.io/nurse-assignment-calculator`
 
 #### Using Netlify
 1. Fork this repository
