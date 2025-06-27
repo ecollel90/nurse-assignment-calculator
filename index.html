@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nurse Assignment Calculator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input, button {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 20px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #results {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            display: none;
+        }
+        .warning {
+            color: #ff6b6b;
+            font-weight: bold;
+        }
+        .success {
+            color: #51cf66;
+        }
+        #copyButton {
+            background-color: #2196F3;
+            margin-top: 10px;
+        }
+        #copyButton:hover {
+            background-color: #0b7dda;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Nurse Assignment Calculator</h1>
+        
+        <div class="input-group">
+            <label for="rooms">Rooms in use (e.g., 114-116, 118-127, 129-140):</label>
+            <input type="text" id="rooms" placeholder="Enter room numbers or ranges">
+        </div>
+
+        <div class="input-group">
+            <label for="nurses">Number of nurses:</label>
+            <input type="number" id="nurses" min="1" placeholder="Enter number of nurses">
+        </div>
+
+        <div class="input-group">
+            <label for="aides">Number of aides:</label>
+            <input type="number" id="aides" min="0" placeholder="Enter number of aides">
+        </div>
+
+        <div class="input-group">
+            <label for="nurseMax">Max patients per nurse:</label>
+            <input type="number" id="nurseMax" value="8" min="1">
+        </div>
+
+        <div class="input-group">
+            <label for="aideMax">Max patients per aide:</label>
+            <input type="number" id="aideMax" value="12" min="1">
+        </div>
+
+        <button onclick="calculateAssignments()">Calculate Assignments</button>
+
+        <div id="results"></div>
+        <button id="copyButton" style="display:none;" onclick="copyResults()">Copy to Clipboard</button>
+    </div>
+
+    <script>
+        // Parse room numbers from input
+        function parseRooms(input) {
+            const rooms = [];
+            const parts = input.split(',');
+            
+            for (let part of parts) {
+                part = part.trim();
+                if (part.includes('-')) {
+                    const [start, end] = part.split('-').map(n => parseInt(n.trim()));
+                    for (let i = start; i <= end; i++) {
+                        rooms.push(i);
+                    }
+                } else if (part) {
+                    rooms.push(parseInt(part));
+                }
+            }
+            
+            return rooms.sort((a, b) => a - b);
+        }
+
+        // Main calculation function
+        function calculateAssignments() {
+            // Get inputs
+            const roomsInput = document.getElementById('rooms').value;
+            const numNurses = parseInt(document.getElementById('nurses').value);
+            const numAides = parseInt(document.getElementById('aides').value);
+            const nurseMax = parseInt(document.getElementById('nurseMax').value);
+            const aideMax = parseInt(document.getElementById('aideMax').value);
+
+            // Validate inputs
+            if (!roomsInput || !numNurses) {
+                alert('Please fill in rooms and number of nurses');
+                return;
+            }
+
+            // Parse rooms
+            const rooms = parseRooms(roomsInput);
+            const totalPatients = rooms.length;
+
+            // Calculate aide coverage
+            const aideCapacity = numAides * aideMax;
+            const patientsWithoutAide = Math.max(0, totalPatients - aideCapacity);
+
+            // Distribute patients among nurses
+            const basePerNurse = Math.floor(totalPatients / numNurses);
+            const remainder = totalPatients % numNurses;
+
+            // Create assignments
+            let output = `ASSIGNMENT RESULTS - ${totalPatients} Total Patients\n`;
+            output += `${'='.repeat(50)}\n\n`;
+
+            // Check if distribution is possible
+            if (totalPatients > numNurses * nurseMax) {
+                output += `⚠️ WARNING: Cannot distribute ${totalPatients} patients among ${numNurses} nurses\n`;
+                output += `Maximum capacity: ${numNurses * nurseMax} patients\n`;
+                output += `Please add more nurses or adjust limits\n`;
+                document.getElementById('results').textContent = output;
+                document.getElementById('results').style.display = 'block';
+                return;
+            }
+
+            // Aide coverage summary
+            output += `✓ Census confirmed: ${totalPatients} patients\n`;
+            output += `✓ Aide capacity: ${aideCapacity} patients (${numAides} × ${aideMax} max)\n`;
+            if (patientsWithoutAide > 0) {
+                output += `📊 ${patientsWithoutAide} patient(s) will be total nurse care\n`;
+            }
+            output += `\n`;
+
+            // Assign rooms to nurses
+            output += `NURSE ASSIGNMENTS\n`;
+            output += `${'-'.repeat(50)}\n`;
+            
+            let roomIndex = 0;
+            const nurseAssignments = [];
+            
+            for (let i = 0; i < numNurses; i++) {
+                const patientCount = basePerNurse + (i < remainder ? 1 : 0);
+                const nurseRooms = rooms.slice(roomIndex, roomIndex + patientCount);
+                roomIndex += patientCount;
+                
+                nurseAssignments.push({
+                    nurse: i + 1,
+                    rooms: nurseRooms,
+                    count: patientCount
+                });
+                
+                output += `Nurse ${i + 1}: ${patientCount} patients\n`;
+                output += `Rooms: ${nurseRooms.join(', ')}\n`;
+                
+                // Determine total care rooms
+                if (patientsWithoutAide > 0 && i < Math.ceil(patientsWithoutAide / numNurses)) {
+                    const totalCareCount = Math.min(
+                        Math.ceil(patientsWithoutAide / numNurses),
+                        patientCount
+                    );
+                    const totalCareRooms = nurseRooms.slice(-totalCareCount);
+                    output += `       └─ Total care rooms: ${totalCareRooms.join(', ')} 🚨\n`;
+                }
+                output += `\n`;
+            }
+
+            // Assign rooms to aides
+            if (numAides > 0) {
+                output += `AIDE COVERAGE\n`;
+                output += `${'-'.repeat(50)}\n`;
+                
+                const coveredRooms = rooms.slice(0, aideCapacity);
+                const basePerAide = Math.floor(coveredRooms.length / numAides);
+                const aideRemainder = coveredRooms.length % numAides;
+                
+                let aideRoomIndex = 0;
+                for (let i = 0; i < numAides; i++) {
+                    const aidePatientCount = basePerAide + (i < aideRemainder ? 1 : 0);
+                    const aideRooms = coveredRooms.slice(aideRoomIndex, aideRoomIndex + aidePatientCount);
+                    aideRoomIndex += aidePatientCount;
+                    
+                    output += `Aide ${i + 1}: ${aidePatientCount} patients\n`;
+                    output += `Rooms: ${formatRoomRanges(aideRooms)}\n\n`;
+                }
+            }
+
+            // Display results
+            document.getElementById('results').textContent = output;
+            document.getElementById('results').style.display = 'block';
+            document.getElementById('copyButton').style.display = 'block';
+        }
+
+        // Format room ranges for cleaner display
+        function formatRoomRanges(rooms) {
+            if (rooms.length === 0) return '';
+            
+            const ranges = [];
+            let start = rooms[0];
+            let end = rooms[0];
+            
+            for (let i = 1; i < rooms.length; i++) {
+                if (rooms[i] === end + 1) {
+                    end = rooms[i];
+                } else {
+                    ranges.push(start === end ? `${start}` : `${start}-${end}`);
+                    start = rooms[i];
+                    end = rooms[i];
+                }
+            }
+            ranges.push(start === end ? `${start}` : `${start}-${end}`);
+            
+            return ranges.join(', ');
+        }
+
+        // Copy results to clipboard
+        function copyResults() {
+            const results = document.getElementById('results').textContent;
+            navigator.clipboard.writeText(results).then(() => {
+                const button = document.getElementById('copyButton');
+                button.textContent = 'Copied!';
+                setTimeout(() => {
+                    button.textContent = 'Copy to Clipboard';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>
