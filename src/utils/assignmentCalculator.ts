@@ -2,7 +2,8 @@
  * ====
  * ASSIGNMENT CALCULATION ENGINE
  * ====
- * Zone-based assignment system with clinical priority for total care assignments
+ * Zone-based assignment system for efficient geographical clustering
+ * minimizing nurse travel time while maintaining fair distribution.
  */
 
 import type { 
@@ -86,6 +87,9 @@ export function processRoomList(
 
 /**
  * Divides rooms into geographical zones for efficient nurse coverage
+ * @param allRooms - Complete sorted list of room numbers
+ * @param totalNurses - Number of nurses to create zones for
+ * @returns Array of room zones for each nurse
  */
 function createGeographicalZones(allRooms: number[], totalNurses: number): number[][] {
   const totalRooms = allRooms.length;
@@ -108,6 +112,10 @@ function createGeographicalZones(allRooms: number[], totalNurses: number): numbe
 
 /**
  * Redistributes special care patients fairly across zones
+ * @param zones - Current zone assignments
+ * @param specialRooms - Rooms requiring special care
+ * @param totalNurses - Number of nurses
+ * @returns Zones with balanced special care distribution
  */
 function balanceSpecialCareAcrossZones(
   zones: number[][], 
@@ -163,7 +171,7 @@ function balanceSpecialCareAcrossZones(
 }
 
 /**
- * Assigns total care responsibilities with clinical priority
+ * Assigns total care responsibilities with clinical priority WITHIN each nurse's zone
  * PRIORITY ORDER: Fall Risk > High Acuity > Regular patients
  * @param nurseAssignments - Current nurse assignments to modify
  * @param patientsWithoutAideSupport - Number of patients requiring total care
@@ -180,10 +188,29 @@ function assignTotalCareRooms(
     return;
   }
   
-  // Collect all available rooms from all nurses with clinical priority
-  const allAvailableRooms: Array<{room: number, nurseIndex: number, priority: number}> = [];
+  const totalNurses = nurseAssignments.length;
+  const baseTotalCarePerNurse = Math.floor(patientsWithoutAideSupport / totalNurses);
+  const extraTotalCarePatients = patientsWithoutAideSupport % totalNurses;
   
+  let remainingTotalCareToAssign = patientsWithoutAideSupport;
+  
+  // Assign total care to each nurse, prioritizing fall risk within their zone
   nurseAssignments.forEach((assignment, nurseIndex) => {
+    if (remainingTotalCareToAssign <= 0) {
+      return;
+    }
+    
+    // Calculate how many total care patients this nurse should get
+    const totalCareForThisNurse = baseTotalCarePerNurse + (nurseIndex < extraTotalCarePatients ? 1 : 0);
+    
+    if (totalCareForThisNurse === 0) {
+      assignment.totalCareRooms = [];
+      return;
+    }
+    
+    // Prioritize rooms within this nurse's assignment
+    const nursePriorityRooms: Array<{room: number, priority: number}> = [];
+    
     assignment.assignedRooms.forEach(room => {
       let priority = 3; // Regular patient (lowest priority)
       
@@ -193,46 +220,66 @@ function assignTotalCareRooms(
         priority = 2; // High acuity (medium priority)
       }
       
-      allAvailableRooms.push({ room, nurseIndex, priority });
+      nursePriorityRooms.push({ room, priority });
     });
-  });
-  
-  // Sort by priority (1 = highest priority for total care)
-  allAvailableRooms.sort((a, b) => {
-    if (a.priority !== b.priority) {
-      return a.priority - b.priority; // Fall risk first, then high acuity, then regular
-    }
-    return a.room - b.room; // Secondary sort by room number
-  });
-  
-  // Assign total care to highest priority patients first
-  let remainingTotalCarePatients = patientsWithoutAideSupport;
-  const totalCareAssignments: Map<number, number[]> = new Map();
-  
-  // Initialize total care tracking for each nurse
-  nurseAssignments.forEach((_, index) => {
-    totalCareAssignments.set(index, []);
-  });
-  
-  for (const { room, nurseIndex } of allAvailableRooms) {
-    if (remainingTotalCarePatients <= 0) {
-      break;
+    
+    // Sort this nurse's rooms by priority (fall risk first)
+    nursePriorityRooms.sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority; // Fall risk first, then high acuity, then regular
+      }
+      return a.room - b.room; // Secondary sort by room number
+    });
+    
+    // Assign total care to highest priority patients for this nurse
+    const totalCareRooms: number[] = [];
+    const actualTotalCareCount = Math.min(totalCareForThisNurse, nursePriorityRooms.length, remainingTotalCareToAssign);
+    
+    for (let i = 0; i < actualTotalCareCount; i++) {
+      totalCareRooms.push(nursePriorityRooms[i].room);
     }
     
-    const currentTotalCare = totalCareAssignments.get(nurseIndex) || [];
-    
-    // Limit total care per nurse to prevent overload (max 3 per nurse)
-    if (currentTotalCare.length < 3) {
-      currentTotalCare.push(room);
-      totalCareAssignments.set(nurseIndex, currentTotalCare);
-      remainingTotalCarePatients--;
+    assignment.totalCareRooms = totalCareRooms.sort((a, b) => a - b);
+    remainingTotalCareToAssign -= actualTotalCareCount;
+  });
+  
+  // Handle any remaining total care patients (edge case)
+  if (remainingTotalCareToAssign > 0) {
+    // Distribute remaining total care to nurses with capacity
+    for (const assignment of nurseAssignments) {
+      if (remainingTotalCareToAssign <= 0) break;
+      
+      const availableCapacity = Math.min(3, assignment.assignedRooms.length) - assignment.totalCareRooms.length;
+      if (availableCapacity > 0) {
+        // Find rooms not already assigned as total care
+        const remainingRooms = assignment.assignedRooms.filter(
+          room => !assignment.totalCareRooms.includes(room)
+        );
+        
+        if (remainingRooms.length > 0) {
+          // Prioritize fall risk and high acuity among remaining rooms
+          const prioritizedRemaining = remainingRooms.map(room => ({
+            room,
+            priority: highFallRiskRooms.includes(room) ? 1 : 
+                     (highAcuityRooms.includes(room) ? 2 : 3)
+          })).sort((a, b) => a.priority - b.priority);
+          
+          const additionalTotalCare = Math.min(
+            availableCapacity, 
+            remainingTotalCareToAssign, 
+            prioritizedRemaining.length
+          );
+          
+          for (let i = 0; i < additionalTotalCare; i++) {
+            assignment.totalCareRooms.push(prioritizedRemaining[i].room);
+          }
+          
+          assignment.totalCareRooms.sort((a, b) => a - b);
+          remainingTotalCareToAssign -= additionalTotalCare;
+        }
+      }
     }
   }
-  
-  // Apply total care assignments to nurse assignments
-  nurseAssignments.forEach((assignment, nurseIndex) => {
-    assignment.totalCareRooms = (totalCareAssignments.get(nurseIndex) || []).sort((a, b) => a - b);
-  });
 }
 
 /**
