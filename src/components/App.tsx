@@ -13,6 +13,12 @@ import { Footer } from './Footer';
 import { calculateStaffAssignments } from '../utils/assignmentCalculator';
 import { generateCompleteAssignmentReport } from '../utils/reportGenerator';
 import type { AssignmentInputData } from '../types';
+import { 
+  processPatientFlowChanges, 
+  validatePatientFlowChanges, 
+  formatChangeHistory,
+  type PatientFlowChange 
+} from '../utils/NurseAssignmentCalculator';
 
 export const App: React.FC = () => {
   // Application state management
@@ -20,6 +26,12 @@ export const App: React.FC = () => {
   const [showResults, setShowResults] = useState<boolean>(false);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+
+  // State for tracking discharges and admits
+  const [dischargeRooms, setDischargeRooms] = useState<string>('');
+  const [admitRooms, setAdmitRooms] = useState<string>('');
+  const [changeHistory, setChangeHistory] = useState<PatientFlowChange[]>([]);
+  const [showChangeSection, setShowChangeSection] = useState<boolean>(false);
 
   /**
    * Processes assignment calculation request and handles results or errors
@@ -54,6 +66,69 @@ export const App: React.FC = () => {
       
     } finally {
       setIsCalculating(false);
+
+      /**
+ * Handles updating assignments with discharges and admits
+ * Uses utility functions to process changes and maintain fair distribution
+ */
+const handlePatientFlowChanges = (): void => {
+  if (!assignments.length) {
+    alert('Please calculate initial assignments first.');
+    return;
+  }
+
+  try {
+    // Validate discharge rooms before processing
+    const validation = validatePatientFlowChanges(assignments, dischargeRooms);
+    if (!validation.isValid) {
+      alert(validation.errorMessage);
+      return;
+    }
+
+    // Process the changes using utility function
+    const result = processPatientFlowChanges(
+      assignments,
+      dischargeRooms,
+      admitRooms,
+      nurseCount,
+      aideCount,
+      maxPatientsPerNurse,
+      maxPatientsPerAide
+    );
+
+    // Update state with new assignments and change history
+    setAssignments(result.updatedAssignments);
+    setChangeHistory(prevHistory => [...prevHistory, result.changeRecord]);
+
+    // Clear input fields after successful update
+    setDischargeRooms('');
+    setAdmitRooms('');
+
+    // Show success message
+    const dischargeCount = result.changeRecord.discharges.length;
+    const admitCount = result.changeRecord.admits.length;
+    alert(`Successfully updated assignments: ${dischargeCount} discharge(s), ${admitCount} admit(s)`);
+
+  } catch (error) {
+    console.error('Error updating assignments:', error);
+    alert(error instanceof Error ? error.message : 'Error updating assignments. Please try again.');
+  }
+};
+
+/**
+ * Clears the discharge and admit input fields
+ */
+const clearChangeInputs = (): void => {
+  setDischargeRooms('');
+  setAdmitRooms('');
+};
+
+/**
+ * Toggles the visibility of the change management section
+ */
+const toggleChangeSection = (): void => {
+  setShowChangeSection(prevShow => !prevShow);
+};
     }
   };
 
