@@ -1,7 +1,7 @@
 /**
- * ================================================================
+ * ====
  * ASSIGNMENT CALCULATION ENGINE
- * ================================================================
+ * ====
  * Core logic for distributing patients fairly among nursing staff
  * with special consideration for high-acuity and high fall risk patients.
  */
@@ -49,6 +49,43 @@ export function calculateAideCoverageData(
     totalAideCapacity,
     patientsWithoutAideSupport
   };
+}
+
+/**
+ * Processes room list with discharges and admits
+ * @param roomRangeStart - Starting room number
+ * @param roomRangeEnd - Ending room number
+ * @param excludedRooms - Rooms to exclude (maintenance, etc.)
+ * @param discharges - Rooms with patient discharges
+ * @param admits - Rooms with new patient admits
+ * @returns Final processed room list
+ */
+export function processRoomList(
+  roomRangeStart: number,
+  roomRangeEnd: number,
+  excludedRooms: number[],
+  discharges: number[],
+  admits: number[]
+): number[] {
+  // Start with base room range
+  const allRoomsInRange = generateRoomRange(roomRangeStart, roomRangeEnd);
+  
+  // Remove excluded rooms (maintenance, unavailable, etc.)
+  let availableRooms = removeExcludedRooms(allRoomsInRange, excludedRooms);
+  
+  // Remove discharge rooms (patients leaving today)
+  availableRooms = removeExcludedRooms(availableRooms, discharges);
+  
+  // Add admit rooms (new patients coming in)
+  if (admits.length > 0) {
+    availableRooms = [...availableRooms, ...admits];
+    
+    // Remove duplicates and sort
+    availableRooms = Array.from(new Set(availableRooms));
+    availableRooms.sort((a, b) => a - b);
+  }
+  
+  return availableRooms;
 }
 
 /**
@@ -244,6 +281,8 @@ export function calculateStaffAssignments(inputData: AssignmentInputData): Assig
     roomRangeStart,
     roomRangeEnd,
     excludedRooms,
+    discharges,
+    admits,
     highAcuityRooms,
     highFallRiskRooms,
     totalNurses,
@@ -252,9 +291,15 @@ export function calculateStaffAssignments(inputData: AssignmentInputData): Assig
     maxPatientsPerAide
   } = inputData;
   
-  // Generate and filter room list
-  const allRoomsInRange = generateRoomRange(roomRangeStart, roomRangeEnd);
-  const availableRooms = removeExcludedRooms(allRoomsInRange, excludedRooms);
+  // Process room list with discharges and admits
+  const availableRooms = processRoomList(
+    roomRangeStart, 
+    roomRangeEnd, 
+    excludedRooms, 
+    discharges, 
+    admits
+  );
+  
   const totalPatientCount = availableRooms.length;
   
   // Validate capacity constraints
@@ -289,7 +334,7 @@ export function calculateStaffAssignments(inputData: AssignmentInputData): Assig
 }
 
 /**
- * Helper function to generate room range (moved from roomParser for circular dependency)
+ * Helper function to generate room range
  */
 function generateRoomRange(rangeStart: number, rangeEnd: number): number[] {
   const generatedRooms: number[] = [];
