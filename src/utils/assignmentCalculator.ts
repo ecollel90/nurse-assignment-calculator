@@ -58,7 +58,7 @@ export function calculateAideCoverageData(
  * @param excludedRooms - Rooms to exclude (maintenance, etc.)
  * @param discharges - Rooms with patient discharges
  * @param admits - Rooms with new patient admits
- * @returns Final processed room list
+ * @returns Final processed room list and change tracking
  */
 export function processRoomList(
   roomRangeStart: number,
@@ -66,17 +66,23 @@ export function processRoomList(
   excludedRooms: number[],
   discharges: number[],
   admits: number[]
-): number[] {
+): { 
+  availableRooms: number[], 
+  processedDischarges: number[], 
+  processedAdmits: number[] 
+} {
   // Start with base room range
   const allRoomsInRange = generateRoomRange(roomRangeStart, roomRangeEnd);
   
   // Remove excluded rooms (maintenance, unavailable, etc.)
   let availableRooms = removeExcludedRooms(allRoomsInRange, excludedRooms);
   
-  // Remove discharge rooms (patients leaving today)
+  // Process discharges (remove from existing rooms)
+  const processedDischarges = discharges.filter(room => availableRooms.includes(room));
   availableRooms = removeExcludedRooms(availableRooms, discharges);
   
-  // Add admit rooms (new patients coming in)
+  // Process admits (add new rooms)
+  const processedAdmits = [...admits];
   if (admits.length > 0) {
     availableRooms = [...availableRooms, ...admits];
     
@@ -85,7 +91,11 @@ export function processRoomList(
     availableRooms.sort((a, b) => a - b);
   }
   
-  return availableRooms;
+  return {
+    availableRooms,
+    processedDischarges,
+    processedAdmits
+  };
 }
 
 /**
@@ -100,38 +110,40 @@ export function categorizeRoomsByPriority(
   highAcuityRooms: number[], 
   highFallRiskRooms: number[]
 ): CategorizedRooms {
-  // Remove duplicates and ensure high acuity takes precedence
-  const uniqueHighAcuity = Array.from(new Set(highAcuityRooms));
-  const uniqueHighFallRisk = Array.from(
-    new Set(highFallRiskRooms.filter(room => !uniqueHighAcuity.includes(room)))
-  );
+  // Filter special rooms to only include those that actually exist
+  const validHighAcuity = highAcuityRooms.filter(room => allRooms.includes(room));
+  const validHighFallRisk = highFallRiskRooms
+    .filter(room => allRooms.includes(room) && !validHighAcuity.includes(room));
   
   // Regular rooms are those not in either special category
   const regularRooms = allRooms.filter(room => 
-    !uniqueHighAcuity.includes(room) && !uniqueHighFallRisk.includes(room)
+    !validHighAcuity.includes(room) && !validHighFallRisk.includes(room)
   );
   
   return {
-    highAcuityRooms: uniqueHighAcuity,
-    highFallRiskRooms: uniqueHighFallRisk,
+    highAcuityRooms: validHighAcuity,
+    highFallRiskRooms: validHighFallRisk,
     regularRooms
   };
 }
 
 /**
- * Distributes rooms among staff using round-robin algorithm
+ * Distributes rooms among staff using continuous round-robin algorithm
  * @param roomList - Rooms to be assigned
  * @param staffCount - Number of staff members
  * @param existingAssignments - Current staff assignments to append to
  * @param roomType - Type of rooms being assigned (for tracking)
+ * @param startingStaffIndex - Staff index to start distribution from
+ * @returns Next staff index for continued round-robin
  */
 function assignRoomsRoundRobin(
   roomList: number[], 
   staffCount: number, 
   existingAssignments: StaffAssignment[],
-  roomType: 'highAcuity' | 'highFallRisk' | 'regular'
-): void {
-  let currentStaffIndex = 0;
+  roomType: 'highAcuity' | 'highFallRisk' | 'regular',
+  startingStaffIndex: number = 0
+): number {
+  let currentStaffIndex = startingStaffIndex;
   
   for (const roomNumber of roomList) {
     const staffAssignment = existingAssignments[currentStaffIndex];
@@ -148,6 +160,8 @@ function assignRoomsRoundRobin(
     // Move to next staff member in round-robin fashion
     currentStaffIndex = (currentStaffIndex + 1) % staffCount;
   }
+  
+  return currentStaffIndex;
 }
 
 /**
@@ -177,10 +191,33 @@ export function createNurseAssignments(
     })
   );
   
+  // Distribute rooms using continuous round-robin for even distribution
+  let currentStaffIndex = 0;
+  
   // Distribute high-priority rooms first for fair workload
-  assignRoomsRoundRobin(categorizedRooms.highAcuityRooms, totalNurses, nurseAssignments, 'highAcuity');
-  assignRoomsRoundRobin(categorizedRooms.highFallRiskRooms, totalNurses, nurseAssignments, 'highFallRisk');
-  assignRoomsRoundRobin(categorizedRooms.regularRooms, totalNurses, nurseAssignments, 'regular');
+  currentStaffIndex = assignRoomsRoundRobin(
+    categorizedRooms.highAcuityRooms, 
+    totalNurses, 
+    nurseAssignments, 
+    'highAcuity', 
+    currentStaffIndex
+  );
+  
+  currentStaffIndex = assignRoomsRoundRobin(
+    categorizedRooms.highFallRiskRooms, 
+    totalNurses, 
+    nurseAssignments, 
+    'highFallRisk', 
+    currentStaffIndex
+  );
+  
+  assignRoomsRoundRobin(
+    categorizedRooms.regularRooms, 
+    totalNurses, 
+    nurseAssignments, 
+    'regular', 
+    currentStaffIndex
+  );
   
   // Assign total care rooms (patients without aide support)
   assignTotalCareRooms(nurseAssignments, patientsWithoutAideSupport);
@@ -276,7 +313,10 @@ export function createAideAssignments(
  * @param inputData - All user inputs and configuration
  * @returns Complete assignment results with all staff allocations
  */
-export function calculateStaffAssignments(inputData: AssignmentInputData): AssignmentResults {
+export function calculateStaffAssignments(inputData: AssignmentInputData): AssignmentResults & {
+  processedDischarges: number[];
+  processedAdmits: number[];
+} {
   const {
     roomRangeStart,
     roomRangeEnd,
@@ -292,7 +332,7 @@ export function calculateStaffAssignments(inputData: AssignmentInputData): Assig
   } = inputData;
   
   // Process room list with discharges and admits
-  const availableRooms = processRoomList(
+  const { availableRooms, processedDischarges, processedAdmits } = processRoomList(
     roomRangeStart, 
     roomRangeEnd, 
     excludedRooms, 
@@ -329,7 +369,9 @@ export function calculateStaffAssignments(inputData: AssignmentInputData): Assig
     totalPatientCount,
     aideCoverageData,
     nurseAssignments,
-    aideAssignments
+    aideAssignments,
+    processedDischarges,
+    processedAdmits
   };
 }
 
