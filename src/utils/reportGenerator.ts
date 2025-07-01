@@ -12,17 +12,13 @@ import type { AssignmentResults, StaffAssignment } from '../types';
  * Generates summary section with patient census, coverage statistics, and daily changes
  * @param results - Complete assignment calculation results
  * @param maxPatientsPerAide - Maximum aide capacity setting
- * @param processedDischarges - Rooms that were discharged
- * @param processedAdmits - Rooms that were admitted
  * @returns Formatted summary text
  */
 function generateAssignmentSummary(
   results: AssignmentResults, 
-  maxPatientsPerAide: number,
-  processedDischarges: number[] = [],
-  processedAdmits: number[] = []
+  maxPatientsPerAide: number
 ): string {
-  const { totalPatientCount, aideCoverageData } = results;
+  const { totalPatientCount, aideCoverageData, processedDischarges, processedAdmits } = results;
   const totalAides = results.aideAssignments.length;
   
   let summaryText = `✓ Census confirmed: ${totalPatientCount} patients\n`;
@@ -58,6 +54,15 @@ function generateNurseAssignmentSection(nurseAssignments: StaffAssignment[]): st
     nurseSection += `Nurse ${assignment.staffNumber}: ${assignment.patientCount} patients\n`;
     nurseSection += `Rooms: ${assignment.assignedRooms.join(', ')}\n`;
     
+    // Add discharge/admit indicators (most important for workflow)
+    if (assignment.dischargeRooms.length > 0) {
+      nurseSection += `       └─ Discharges: ${assignment.dischargeRooms.join(', ')} 📤\n`;
+    }
+    
+    if (assignment.admitRooms.length > 0) {
+      nurseSection += `       └─ New admits: ${assignment.admitRooms.join(', ')} 📥\n`;
+    }
+    
     // Add high acuity indicators
     if (assignment.highAcuityRooms.length > 0) {
       nurseSection += `       └─ High acuity: ${assignment.highAcuityRooms.join(', ')} ⚕️\n`;
@@ -80,7 +85,7 @@ function generateNurseAssignmentSection(nurseAssignments: StaffAssignment[]): st
 }
 
 /**
- * Generates aide assignment section with individual room listings (consistent with nurse format)
+ * Generates aide assignment section with individual room listings and discharge/admit indicators
  * @param aideAssignments - Array of aide assignments
  * @returns Formatted aide assignment text
  */
@@ -94,7 +99,18 @@ function generateAideAssignmentSection(aideAssignments: StaffAssignment[]): stri
   
   for (const assignment of aideAssignments) {
     aideSection += `Aide ${assignment.staffNumber}: ${assignment.patientCount} patients\n`;
-    aideSection += `Rooms: ${assignment.assignedRooms.join(', ')}\n\n`;
+    aideSection += `Rooms: ${assignment.assignedRooms.join(', ')}\n`;
+    
+    // Add discharge/admit indicators for aides too
+    if (assignment.dischargeRooms.length > 0) {
+      aideSection += `       └─ Discharges: ${assignment.dischargeRooms.join(', ')} 📤\n`;
+    }
+    
+    if (assignment.admitRooms.length > 0) {
+      aideSection += `       └─ New admits: ${assignment.admitRooms.join(', ')} 📥\n`;
+    }
+    
+    aideSection += '\n';
   }
   
   return aideSection;
@@ -104,15 +120,11 @@ function generateAideAssignmentSection(aideAssignments: StaffAssignment[]): stri
  * Generates complete assignment report for distribution to staff
  * @param results - Assignment calculation results
  * @param maxPatientsPerAide - Aide capacity configuration
- * @param processedDischarges - Rooms that were discharged
- * @param processedAdmits - Rooms that were admitted
  * @returns Complete formatted report text
  */
 export function generateCompleteAssignmentReport(
   results: AssignmentResults, 
-  maxPatientsPerAide: number,
-  processedDischarges: number[] = [],
-  processedAdmits: number[] = []
+  maxPatientsPerAide: number
 ): string {
   const { totalPatientCount } = results;
   
@@ -120,7 +132,7 @@ export function generateCompleteAssignmentReport(
   reportText += '='.repeat(50) + '\n\n';
   
   // Add summary section with discharge/admit info
-  reportText += generateAssignmentSummary(results, maxPatientsPerAide, processedDischarges, processedAdmits);
+  reportText += generateAssignmentSummary(results, maxPatientsPerAide);
   
   // Add nurse assignments
   reportText += generateNurseAssignmentSection(results.nurseAssignments);
@@ -134,7 +146,7 @@ export function generateCompleteAssignmentReport(
   reportText += '⚕️ High Acuity Patient\n';
   reportText += '⚠️ High Fall Risk\n';
   reportText += '🚨 Total Nurse Care Required\n';
-  reportText += '📤 Patient Discharged\n';
+  reportText += '📤 Patient Discharged Today\n';
   reportText += '📥 New Patient Admission\n';
   
   return reportText;
