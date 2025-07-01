@@ -33,12 +33,10 @@ export const App: React.FC = () => {
       // Calculate staff assignments using input data
       const calculationResults = calculateStaffAssignments(inputData);
       
-      // Generate formatted report for display with discharge/admit info
+      // Generate formatted report for display
       const formattedReport = generateCompleteAssignmentReport(
         calculationResults, 
-        inputData.maxPatientsPerAide,
-        calculationResults.processedDischarges,
-        calculationResults.processedAdmits
+        inputData.maxPatientsPerAide
       );
       
       // Update application state with results
