@@ -2,8 +2,8 @@
  * ====
  * ASSIGNMENT CALCULATION ENGINE
  * ====
- * Core logic for distributing patients fairly among nursing staff
- * with special consideration for high-acuity and high fall risk patients.
+ * Zone-based assignment system for efficient geographical clustering
+ * minimizing nurse travel time while maintaining fair distribution.
  */
 
 import type { 
@@ -17,10 +17,6 @@ import type {
 
 /**
  * Validates that nursing capacity can handle the patient load
- * @param totalPatientCount - Number of patients to assign
- * @param totalNurses - Available nursing staff
- * @param maxPatientsPerNurse - Maximum patient limit per nurse
- * @returns Boolean indicating if assignment is feasible
  */
 export function validateNursingCapacity(
   totalPatientCount: number, 
@@ -33,10 +29,6 @@ export function validateNursingCapacity(
 
 /**
  * Calculates aide coverage statistics and total care requirements
- * @param totalPatientCount - Total number of patients
- * @param totalAides - Number of available aides
- * @param maxPatientsPerAide - Maximum patients each aide can handle
- * @returns Aide coverage data with capacity and shortfall information
  */
 export function calculateAideCoverageData(
   totalPatientCount: number, 
@@ -54,12 +46,6 @@ export function calculateAideCoverageData(
 
 /**
  * Processes room list with discharges and admits
- * @param roomRangeStart - Starting room number
- * @param roomRangeEnd - Ending room number
- * @param excludedRooms - Rooms to exclude (maintenance, etc.)
- * @param discharges - Rooms with patient discharges
- * @param admits - Rooms with new patient admits
- * @returns Final processed room list and change tracking
  */
 export function processRoomList(
   roomRangeStart: number,
@@ -100,167 +86,139 @@ export function processRoomList(
 }
 
 /**
- * Categorizes rooms by priority level for fair distribution
- * @param allRooms - Complete list of room numbers
- * @param highAcuityRooms - Rooms requiring intensive nursing care
- * @param highFallRiskRooms - Rooms with fall risk patients
- * @returns Categorized room structure for distribution algorithm
+ * Divides rooms into geographical zones for efficient nurse coverage
+ * @param allRooms - Complete sorted list of room numbers
+ * @param totalNurses - Number of nurses to create zones for
+ * @returns Array of room zones for each nurse
  */
-export function categorizeRoomsByPriority(
-  allRooms: number[], 
-  highAcuityRooms: number[], 
-  highFallRiskRooms: number[]
-): CategorizedRooms {
-  // Filter special rooms to only include those that actually exist
-  const validHighAcuity = highAcuityRooms.filter(room => allRooms.includes(room));
-  const validHighFallRisk = highFallRiskRooms
-    .filter(room => allRooms.includes(room) && !validHighAcuity.includes(room));
+function createGeographicalZones(allRooms: number[], totalNurses: number): number[][] {
+  const totalRooms = allRooms.length;
+  const baseRoomsPerZone = Math.floor(totalRooms / totalNurses);
+  const extraRooms = totalRooms % totalNurses;
   
-  // Regular rooms are those not in either special category
-  const regularRooms = allRooms.filter(room => 
-    !validHighAcuity.includes(room) && !validHighFallRisk.includes(room)
-  );
+  const zones: number[][] = [];
+  let currentIndex = 0;
   
-  return {
-    highAcuityRooms: validHighAcuity,
-    highFallRiskRooms: validHighFallRisk,
-    regularRooms
-  };
-}
-
-/**
- * Distributes rooms among staff using continuous round-robin algorithm
- * @param roomList - Rooms to be assigned
- * @param staffCount - Number of staff members
- * @param existingAssignments - Current staff assignments to append to
- * @param roomType - Type of rooms being assigned (for tracking)
- * @param startingStaffIndex - Staff index to start distribution from
- * @param roomStatusData - Status data for tracking special room types
- * @returns Next staff index for continued round-robin
- */
-function assignRoomsRoundRobin(
-  roomList: number[], 
-  staffCount: number, 
-  existingAssignments: StaffAssignment[],
-  roomType: 'highAcuity' | 'highFallRisk' | 'regular',
-  startingStaffIndex: number = 0,
-  roomStatusData: RoomStatusData
-): number {
-  let currentStaffIndex = startingStaffIndex;
-  
-  for (const roomNumber of roomList) {
-    const staffAssignment = existingAssignments[currentStaffIndex];
-    
-    // Add room to main assignment list
-    staffAssignment.assignedRooms.push(roomNumber);
-    
-    // Add to appropriate special care category
-    if (roomType === 'highAcuity') {
-      staffAssignment.highAcuityRooms.push(roomNumber);
-    } else if (roomType === 'highFallRisk') {
-      staffAssignment.highFallRiskRooms.push(roomNumber);
-    }
-    
-    // Track discharge/admit status
-    if (roomStatusData.discharges.includes(roomNumber)) {
-      staffAssignment.dischargeRooms.push(roomNumber);
-    }
-    if (roomStatusData.admits.includes(roomNumber)) {
-      staffAssignment.admitRooms.push(roomNumber);
-    }
-    
-    // Move to next staff member in round-robin fashion
-    currentStaffIndex = (currentStaffIndex + 1) % staffCount;
+  // Create contiguous zones
+  for (let zoneIndex = 0; zoneIndex < totalNurses; zoneIndex++) {
+    const roomsInThisZone = baseRoomsPerZone + (zoneIndex < extraRooms ? 1 : 0);
+    const zoneRooms = allRooms.slice(currentIndex, currentIndex + roomsInThisZone);
+    zones.push(zoneRooms);
+    currentIndex += roomsInThisZone;
   }
   
-  return currentStaffIndex;
+  return zones;
 }
 
 /**
- * Creates nurse assignments with fair distribution of special care patients
+ * Redistributes special care patients fairly across zones
+ * @param zones - Current zone assignments
+ * @param specialRooms - Rooms requiring special care
+ * @param totalNurses - Number of nurses
+ * @returns Zones with balanced special care distribution
+ */
+function balanceSpecialCareAcrossZones(
+  zones: number[][], 
+  specialRooms: number[], 
+  totalNurses: number
+): number[][] {
+  if (specialRooms.length === 0) {
+    return zones;
+  }
+  
+  // Count special care rooms per zone
+  const specialCareCount = zones.map(zone => 
+    zone.filter(room => specialRooms.includes(room)).length
+  );
+  
+  // If distribution is already fair (max difference ≤ 1), keep zones as-is
+  const maxSpecialCare = Math.max(...specialCareCount);
+  const minSpecialCare = Math.min(...specialCareCount);
+  
+  if (maxSpecialCare - minSpecialCare <= 1) {
+    return zones;
+  }
+  
+  // Otherwise, perform limited redistribution
+  const balancedZones = zones.map(zone => [...zone]);
+  
+  // Move special care patients from overloaded zones to underloaded zones
+  for (let fromZone = 0; fromZone < totalNurses; fromZone++) {
+    for (let toZone = 0; toZone < totalNurses; toZone++) {
+      if (fromZone === toZone) continue;
+      
+      const fromSpecialCount = balancedZones[fromZone].filter(room => specialRooms.includes(room)).length;
+      const toSpecialCount = balancedZones[toZone].filter(room => specialRooms.includes(room)).length;
+      
+      // If difference is > 1, try to balance
+      if (fromSpecialCount - toSpecialCount > 1) {
+        const specialRoomInFromZone = balancedZones[fromZone].find(room => specialRooms.includes(room));
+        const regularRoomInToZone = balancedZones[toZone].find(room => !specialRooms.includes(room));
+        
+        if (specialRoomInFromZone && regularRoomInToZone) {
+          // Swap rooms between zones
+          const fromIndex = balancedZones[fromZone].indexOf(specialRoomInFromZone);
+          const toIndex = balancedZones[toZone].indexOf(regularRoomInToZone);
+          
+          balancedZones[fromZone][fromIndex] = regularRoomInToZone;
+          balancedZones[toZone][toIndex] = specialRoomInFromZone;
+        }
+      }
+    }
+  }
+  
+  return balancedZones;
+}
+
+/**
+ * Creates nurse assignments using zone-based geographical clustering
  * @param allRooms - Complete list of patient rooms
  * @param totalNurses - Number of nursing staff
- * @param categorizedRooms - Rooms organized by care requirements
+ * @param highAcuityRooms - Rooms requiring intensive care
+ * @param highFallRiskRooms - Rooms with fall risk patients
  * @param patientsWithoutAideSupport - Number of total care patients
  * @param roomStatusData - Status data for tracking special room types
- * @returns Array of nurse assignments with room allocations
+ * @returns Array of nurse assignments with clustered room allocations
  */
 export function createNurseAssignments(
   allRooms: number[], 
   totalNurses: number, 
-  categorizedRooms: CategorizedRooms,
+  highAcuityRooms: number[],
+  highFallRiskRooms: number[],
   patientsWithoutAideSupport: number,
   roomStatusData: RoomStatusData
 ): StaffAssignment[] {
-  // Initialize nurse assignment structures
-  const nurseAssignments: StaffAssignment[] = Array.from(
-    { length: totalNurses }, 
-    (_, nurseIndex) => ({
-      staffNumber: nurseIndex + 1,
-      assignedRooms: [],
-      patientCount: 0,
-      highAcuityRooms: [],
-      highFallRiskRooms: [],
-      totalCareRooms: [],
-      dischargeRooms: [],
-      admitRooms: []
-    })
-  );
+  // Create initial geographical zones
+  let nurseZones = createGeographicalZones(allRooms, totalNurses);
   
-  // Distribute rooms using continuous round-robin for even distribution
-  let currentStaffIndex = 0;
+  // Balance special care patients across zones
+  nurseZones = balanceSpecialCareAcrossZones(nurseZones, highAcuityRooms, totalNurses);
+  nurseZones = balanceSpecialCareAcrossZones(nurseZones, highFallRiskRooms, totalNurses);
   
-  // Distribute high-priority rooms first for fair workload
-  currentStaffIndex = assignRoomsRoundRobin(
-    categorizedRooms.highAcuityRooms, 
-    totalNurses, 
-    nurseAssignments, 
-    'highAcuity', 
-    currentStaffIndex,
-    roomStatusData
-  );
-  
-  currentStaffIndex = assignRoomsRoundRobin(
-    categorizedRooms.highFallRiskRooms, 
-    totalNurses, 
-    nurseAssignments, 
-    'highFallRisk', 
-    currentStaffIndex,
-    roomStatusData
-  );
-  
-  assignRoomsRoundRobin(
-    categorizedRooms.regularRooms, 
-    totalNurses, 
-    nurseAssignments, 
-    'regular', 
-    currentStaffIndex,
-    roomStatusData
-  );
-  
-  // Assign total care rooms (patients without aide support)
-  assignTotalCareRooms(nurseAssignments, patientsWithoutAideSupport);
-  
-  // Finalize assignments with patient counts and sorted room lists
-  for (const assignment of nurseAssignments) {
-    assignment.assignedRooms.sort((firstRoom, secondRoom) => firstRoom - secondRoom);
-    assignment.patientCount = assignment.assignedRooms.length;
+  // Create nurse assignments from zones
+  const nurseAssignments: StaffAssignment[] = nurseZones.map((zoneRooms, nurseIndex) => {
+    const assignedRooms = [...zoneRooms].sort((a, b) => a - b);
     
-    // Sort special room arrays too
-    assignment.highAcuityRooms.sort((a, b) => a - b);
-    assignment.highFallRiskRooms.sort((a, b) => a - b);
-    assignment.totalCareRooms.sort((a, b) => a - b);
-    assignment.dischargeRooms.sort((a, b) => a - b);
-    assignment.admitRooms.sort((a, b) => a - b);
-  }
+    return {
+      staffNumber: nurseIndex + 1,
+      assignedRooms,
+      patientCount: assignedRooms.length,
+      highAcuityRooms: assignedRooms.filter(room => highAcuityRooms.includes(room)),
+      highFallRiskRooms: assignedRooms.filter(room => highFallRiskRooms.includes(room)),
+      totalCareRooms: [],
+      dischargeRooms: assignedRooms.filter(room => roomStatusData.discharges.includes(room)),
+      admitRooms: assignedRooms.filter(room => roomStatusData.admits.includes(room))
+    };
+  });
+  
+  // Assign total care rooms fairly
+  assignTotalCareRooms(nurseAssignments, patientsWithoutAideSupport);
   
   return nurseAssignments;
 }
 
 /**
  * Assigns total care responsibilities fairly among nurses
- * @param nurseAssignments - Current nurse assignments to modify
- * @param patientsWithoutAideSupport - Number of patients requiring total care
  */
 function assignTotalCareRooms(
   nurseAssignments: StaffAssignment[], 
@@ -279,7 +237,7 @@ function assignTotalCareRooms(
     const assignment = nurseAssignments[nurseIndex];
     const totalCareCount = Math.min(totalCarePerNurse, remainingTotalCarePatients, assignment.assignedRooms.length);
     
-    // Select rooms from the end of the assignment (typically furthest from station)
+    // Select rooms from the end of the assignment
     const totalCareRoomsForNurse = assignment.assignedRooms.slice(-totalCareCount);
     assignment.totalCareRooms = totalCareRoomsForNurse;
     
@@ -289,11 +247,6 @@ function assignTotalCareRooms(
 
 /**
  * Creates aide assignments for rooms with aide coverage
- * @param allRooms - Complete list of patient rooms
- * @param totalAides - Number of available aides
- * @param totalAideCapacity - Maximum patients aides can handle
- * @param roomStatusData - Status data for tracking special room types
- * @returns Array of aide assignments
  */
 export function createAideAssignments(
   allRooms: number[], 
@@ -313,7 +266,7 @@ export function createAideAssignments(
   const aideAssignments: StaffAssignment[] = [];
   let currentRoomIndex = 0;
   
-  // Distribute rooms evenly among aides
+  // Distribute rooms evenly among aides (keeping geographical clustering)
   for (let aideIndex = 0; aideIndex < totalAides; aideIndex++) {
     const roomsForThisAide = baseRoomsPerAide + (aideIndex < extraRooms ? 1 : 0);
     const assignedRooms = roomsWithAideCoverage.slice(
@@ -344,8 +297,6 @@ export function createAideAssignments(
 
 /**
  * Main calculation function that orchestrates the entire assignment process
- * @param inputData - All user inputs and configuration
- * @returns Complete assignment results with all staff allocations
  */
 export function calculateStaffAssignments(inputData: AssignmentInputData): AssignmentResults {
   const {
@@ -386,15 +337,15 @@ export function calculateStaffAssignments(inputData: AssignmentInputData): Assig
     highFallRisk: highFallRiskRooms.filter(room => availableRooms.includes(room))
   };
   
-  // Calculate aide coverage and categorize rooms
+  // Calculate aide coverage
   const aideCoverageData = calculateAideCoverageData(totalPatientCount, totalAides, maxPatientsPerAide);
-  const categorizedRooms = categorizeRoomsByPriority(availableRooms, highAcuityRooms, highFallRiskRooms);
   
-  // Create staff assignments
+  // Create zone-based staff assignments
   const nurseAssignments = createNurseAssignments(
     availableRooms, 
     totalNurses, 
-    categorizedRooms, 
+    highAcuityRooms,
+    highFallRiskRooms,
     aideCoverageData.patientsWithoutAideSupport,
     roomStatusData
   );
