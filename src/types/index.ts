@@ -1,7 +1,7 @@
 /**
- * ================================================================
+ * ====
  * TYPE DEFINITIONS
- * ================================================================
+ * ====
  * Central location for all TypeScript interfaces and types
  * used throughout the nurse assignment calculator application.
  */
@@ -11,6 +11,8 @@ export interface AssignmentInputData {
   roomRangeStart: number;
   roomRangeEnd: number;
   excludedRooms: number[];
+  discharges: number[];
+  admits: number[];
   highAcuityRooms: number[];
   highFallRiskRooms: number[];
   totalNurses: number;
