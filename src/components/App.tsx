@@ -1,7 +1,7 @@
 /**
- * ================================================================
+ * ====
  * MAIN APPLICATION COMPONENT
- * ================================================================
+ * ====
  * Orchestrates the entire nurse assignment calculator application
  */
 
@@ -33,10 +33,12 @@ export const App: React.FC = () => {
       // Calculate staff assignments using input data
       const calculationResults = calculateStaffAssignments(inputData);
       
-      // Generate formatted report for display
+      // Generate formatted report for display with discharge/admit info
       const formattedReport = generateCompleteAssignmentReport(
         calculationResults, 
-        inputData.maxPatientsPerAide
+        inputData.maxPatientsPerAide,
+        calculationResults.processedDischarges,
+        calculationResults.processedAdmits
       );
       
       // Update application state with results
