@@ -11,7 +11,8 @@ import type {
   AssignmentResults, 
   StaffAssignment, 
   AideCoverageData,
-  CategorizedRooms 
+  CategorizedRooms,
+  RoomStatusData
 } from '../types';
 
 /**
@@ -134,6 +135,7 @@ export function categorizeRoomsByPriority(
  * @param existingAssignments - Current staff assignments to append to
  * @param roomType - Type of rooms being assigned (for tracking)
  * @param startingStaffIndex - Staff index to start distribution from
+ * @param roomStatusData - Status data for tracking special room types
  * @returns Next staff index for continued round-robin
  */
 function assignRoomsRoundRobin(
@@ -141,20 +143,30 @@ function assignRoomsRoundRobin(
   staffCount: number, 
   existingAssignments: StaffAssignment[],
   roomType: 'highAcuity' | 'highFallRisk' | 'regular',
-  startingStaffIndex: number = 0
+  startingStaffIndex: number = 0,
+  roomStatusData: RoomStatusData
 ): number {
   let currentStaffIndex = startingStaffIndex;
   
   for (const roomNumber of roomList) {
     const staffAssignment = existingAssignments[currentStaffIndex];
     
-    // Add room to appropriate category and main assignment list
+    // Add room to main assignment list
     staffAssignment.assignedRooms.push(roomNumber);
     
+    // Add to appropriate special care category
     if (roomType === 'highAcuity') {
       staffAssignment.highAcuityRooms.push(roomNumber);
     } else if (roomType === 'highFallRisk') {
       staffAssignment.highFallRiskRooms.push(roomNumber);
+    }
+    
+    // Track discharge/admit status
+    if (roomStatusData.discharges.includes(roomNumber)) {
+      staffAssignment.dischargeRooms.push(roomNumber);
+    }
+    if (roomStatusData.admits.includes(roomNumber)) {
+      staffAssignment.admitRooms.push(roomNumber);
     }
     
     // Move to next staff member in round-robin fashion
@@ -170,13 +182,15 @@ function assignRoomsRoundRobin(
  * @param totalNurses - Number of nursing staff
  * @param categorizedRooms - Rooms organized by care requirements
  * @param patientsWithoutAideSupport - Number of total care patients
+ * @param roomStatusData - Status data for tracking special room types
  * @returns Array of nurse assignments with room allocations
  */
 export function createNurseAssignments(
   allRooms: number[], 
   totalNurses: number, 
   categorizedRooms: CategorizedRooms,
-  patientsWithoutAideSupport: number
+  patientsWithoutAideSupport: number,
+  roomStatusData: RoomStatusData
 ): StaffAssignment[] {
   // Initialize nurse assignment structures
   const nurseAssignments: StaffAssignment[] = Array.from(
@@ -187,7 +201,9 @@ export function createNurseAssignments(
       patientCount: 0,
       highAcuityRooms: [],
       highFallRiskRooms: [],
-      totalCareRooms: []
+      totalCareRooms: [],
+      dischargeRooms: [],
+      admitRooms: []
     })
   );
   
@@ -200,7 +216,8 @@ export function createNurseAssignments(
     totalNurses, 
     nurseAssignments, 
     'highAcuity', 
-    currentStaffIndex
+    currentStaffIndex,
+    roomStatusData
   );
   
   currentStaffIndex = assignRoomsRoundRobin(
@@ -208,7 +225,8 @@ export function createNurseAssignments(
     totalNurses, 
     nurseAssignments, 
     'highFallRisk', 
-    currentStaffIndex
+    currentStaffIndex,
+    roomStatusData
   );
   
   assignRoomsRoundRobin(
@@ -216,7 +234,8 @@ export function createNurseAssignments(
     totalNurses, 
     nurseAssignments, 
     'regular', 
-    currentStaffIndex
+    currentStaffIndex,
+    roomStatusData
   );
   
   // Assign total care rooms (patients without aide support)
@@ -226,6 +245,13 @@ export function createNurseAssignments(
   for (const assignment of nurseAssignments) {
     assignment.assignedRooms.sort((firstRoom, secondRoom) => firstRoom - secondRoom);
     assignment.patientCount = assignment.assignedRooms.length;
+    
+    // Sort special room arrays too
+    assignment.highAcuityRooms.sort((a, b) => a - b);
+    assignment.highFallRiskRooms.sort((a, b) => a - b);
+    assignment.totalCareRooms.sort((a, b) => a - b);
+    assignment.dischargeRooms.sort((a, b) => a - b);
+    assignment.admitRooms.sort((a, b) => a - b);
   }
   
   return nurseAssignments;
@@ -266,12 +292,14 @@ function assignTotalCareRooms(
  * @param allRooms - Complete list of patient rooms
  * @param totalAides - Number of available aides
  * @param totalAideCapacity - Maximum patients aides can handle
+ * @param roomStatusData - Status data for tracking special room types
  * @returns Array of aide assignments
  */
 export function createAideAssignments(
   allRooms: number[], 
   totalAides: number, 
-  totalAideCapacity: number
+  totalAideCapacity: number,
+  roomStatusData: RoomStatusData
 ): StaffAssignment[] {
   if (totalAides === 0) {
     return [];
@@ -293,13 +321,19 @@ export function createAideAssignments(
       currentRoomIndex + roomsForThisAide
     );
     
+    // Track discharge/admit status for aide assignments
+    const dischargeRooms = assignedRooms.filter(room => roomStatusData.discharges.includes(room));
+    const admitRooms = assignedRooms.filter(room => roomStatusData.admits.includes(room));
+    
     aideAssignments.push({
       staffNumber: aideIndex + 1,
       assignedRooms,
       patientCount: roomsForThisAide,
       highAcuityRooms: [],
       highFallRiskRooms: [],
-      totalCareRooms: []
+      totalCareRooms: [],
+      dischargeRooms,
+      admitRooms
     });
     
     currentRoomIndex += roomsForThisAide;
@@ -313,10 +347,7 @@ export function createAideAssignments(
  * @param inputData - All user inputs and configuration
  * @returns Complete assignment results with all staff allocations
  */
-export function calculateStaffAssignments(inputData: AssignmentInputData): AssignmentResults & {
-  processedDischarges: number[];
-  processedAdmits: number[];
-} {
+export function calculateStaffAssignments(inputData: AssignmentInputData): AssignmentResults {
   const {
     roomRangeStart,
     roomRangeEnd,
@@ -347,6 +378,14 @@ export function calculateStaffAssignments(inputData: AssignmentInputData): Assig
     throw new Error(`Insufficient nursing capacity: ${totalPatientCount} patients exceed maximum capacity of ${totalNurses * maxPatientsPerNurse}`);
   }
   
+  // Prepare room status data for tracking
+  const roomStatusData: RoomStatusData = {
+    discharges: processedDischarges,
+    admits: processedAdmits,
+    highAcuity: highAcuityRooms.filter(room => availableRooms.includes(room)),
+    highFallRisk: highFallRiskRooms.filter(room => availableRooms.includes(room))
+  };
+  
   // Calculate aide coverage and categorize rooms
   const aideCoverageData = calculateAideCoverageData(totalPatientCount, totalAides, maxPatientsPerAide);
   const categorizedRooms = categorizeRoomsByPriority(availableRooms, highAcuityRooms, highFallRiskRooms);
@@ -356,13 +395,15 @@ export function calculateStaffAssignments(inputData: AssignmentInputData): Assig
     availableRooms, 
     totalNurses, 
     categorizedRooms, 
-    aideCoverageData.patientsWithoutAideSupport
+    aideCoverageData.patientsWithoutAideSupport,
+    roomStatusData
   );
   
   const aideAssignments = createAideAssignments(
     availableRooms, 
     totalAides, 
-    aideCoverageData.totalAideCapacity
+    aideCoverageData.totalAideCapacity,
+    roomStatusData
   );
   
   return {
