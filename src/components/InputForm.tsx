@@ -1,7 +1,7 @@
 /**
- * ================================================================
+ * ====
  * ASSIGNMENT INPUT FORM COMPONENT
- * ================================================================
+ * ====
  * Handles all user inputs for room assignments and staffing data
  */
 
@@ -22,6 +22,8 @@ export const InputForm: React.FC<InputFormProps> = ({
   const [roomRangeStart, setRoomRangeStart] = useState<string>('101');
   const [roomRangeEnd, setRoomRangeEnd] = useState<string>('120');
   const [excludedRoomsInput, setExcludedRoomsInput] = useState<string>('');
+  const [dischargesInput, setDischargesInput] = useState<string>('');
+  const [admitsInput, setAdmitsInput] = useState<string>('');
   const [highAcuityRoomsInput, setHighAcuityRoomsInput] = useState<string>('');
   const [highFallRiskRoomsInput, setHighFallRiskRoomsInput] = useState<string>('');
   const [totalNurses, setTotalNurses] = useState<string>('4');
@@ -60,8 +62,10 @@ export const InputForm: React.FC<InputFormProps> = ({
       return;
     }
     
-    // Parse special room lists
+    // Parse room lists
     const excludedRooms = parseRoomInputString(excludedRoomsInput);
+    const discharges = parseRoomInputString(dischargesInput);
+    const admits = parseRoomInputString(admitsInput);
     const highAcuityRooms = parseRoomInputString(highAcuityRoomsInput);
     const highFallRiskRooms = parseRoomInputString(highFallRiskRoomsInput);
     
@@ -70,6 +74,8 @@ export const InputForm: React.FC<InputFormProps> = ({
       roomRangeStart: parsedRoomStart,
       roomRangeEnd: parsedRoomEnd,
       excludedRooms,
+      discharges,
+      admits,
       highAcuityRooms,
       highFallRiskRooms,
       totalNurses: parsedNurses,
@@ -126,8 +132,43 @@ export const InputForm: React.FC<InputFormProps> = ({
             aria-label="Rooms to exclude from assignment"
           />
           <small className="input-hint">
-            Enter room numbers to skip (maintenance, discharge, etc.)
+            Enter room numbers to skip (maintenance, unavailable, etc.)
           </small>
+        </div>
+
+        {/* New Discharges and Admits Section */}
+        <div className="discharge-admit-section">
+          <div className="input-row">
+            <div className="input-group">
+              <label htmlFor="discharges">Discharges (optional):</label>
+              <input
+                type="text"
+                id="discharges"
+                value={dischargesInput}
+                onChange={(event) => setDischargesInput(event.target.value)}
+                placeholder="e.g., 102, 108, 114-116"
+                aria-label="Rooms with patient discharges"
+              />
+              <small className="input-hint">
+                Rooms with patients being discharged today
+              </small>
+            </div>
+            
+            <div className="input-group">
+              <label htmlFor="admits">Admits (optional):</label>
+              <input
+                type="text"
+                id="admits"
+                value={admitsInput}
+                onChange={(event) => setAdmitsInput(event.target.value)}
+                placeholder="e.g., 103, 109, 121-123"
+                aria-label="Rooms with new patient admits"
+              />
+              <small className="input-hint">
+                Rooms receiving new patient admissions
+              </small>
+            </div>
+          </div>
         </div>
       </div>
 
