@@ -29,6 +29,8 @@ export interface StaffAssignment {
   highAcuityRooms: number[];
   highFallRiskRooms: number[];
   totalCareRooms: number[];
+  dischargeRooms: number[];
+  admitRooms: number[];
 }
 
 /** Aide coverage statistics and calculations */
@@ -43,6 +45,8 @@ export interface AssignmentResults {
   aideCoverageData: AideCoverageData;
   nurseAssignments: StaffAssignment[];
   aideAssignments: StaffAssignment[];
+  processedDischarges: number[];
+  processedAdmits: number[];
 }
 
 /** Room categorization for fair distribution */
@@ -50,4 +54,12 @@ export interface CategorizedRooms {
   highAcuityRooms: number[];
   highFallRiskRooms: number[];
   regularRooms: number[];
+}
+
+/** Room status tracking for assignments */
+export interface RoomStatusData {
+  discharges: number[];
+  admits: number[];
+  highAcuity: number[];
+  highFallRisk: number[];
 }
