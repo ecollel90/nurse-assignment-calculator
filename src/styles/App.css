@@ -1,7 +1,7 @@
 /**
- * ================================================================
+ * ====
  * NURSE ASSIGNMENT CALCULATOR STYLES
- * ================================================================
+ * ====
  * Responsive, accessible styling for healthcare workflow optimization
  */
 
@@ -150,6 +150,42 @@ body {
   color: #6c757d;
   font-size: 0.85rem;
   font-style: italic;
+}
+
+/* NEW: Discharge and Admit Section Styling */
+.discharge-admit-section {
+  margin-top: 15px;
+  padding: 15px;
+  background: linear-gradient(135deg, #fff3e0 0%, #ffccbc 20%, #fff3e0 100%);
+  border-radius: 8px;
+  border: 2px solid #ff9800;
+  position: relative;
+}
+
+.discharge-admit-section::before {
+  content: "📋 Daily Changes";
+  position: absolute;
+  top: -12px;
+  left: 15px;
+  background: #ff9800;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.discharge-admit-section .input-row {
+  margin-top: 5px;
+}
+
+.discharge-admit-section .input-group input {
+  border-color: #ffb74d;
+}
+
+.discharge-admit-section .input-group input:focus {
+  border-color: #ff9800;
+  box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.1);
 }
 
 /* Calculate Button */
@@ -301,6 +337,15 @@ body {
   
   .results-display {
     font-size: 0.8rem;
+  }
+
+  /* Mobile adjustments for discharge-admit section */
+  .discharge-admit-section::before {
+    position: static;
+    display: block;
+    text-align: center;
+    margin-bottom: 10px;
+    border-radius: 6px;
   }
 }
 
